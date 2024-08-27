@@ -1,1 +1,1 @@
-python train.py --lr 0.02 --amp
+python train.py --lr 0.01 --amp
