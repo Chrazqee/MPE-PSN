@@ -1,3 +1,4 @@
+# 这个脚本进行推理一次，使用训练得到的参数，然后计算每一层的 spike rate
 import argparse
 import math
 import os
@@ -7,18 +8,18 @@ from signal import sigwait
 
 import loguru
 import torch
-import tqdm
 from spikingjelly.datasets.dvs128_gesture import DVS128Gesture
 from torch import nn
 from torch import amp
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from torchvision.transforms import transforms
-from tqdm import tqdm_pandas
+
+from DVSGusture.utils import MyHook
 
 try:
     from DVSGusture import myTransform
-    from DVSGusture.models import DVSGestureNet
+    from DVSGusture.models import DVSGestureNet, MPE_PSN
     from cifar10dvs.mixup import Mixup
     from functions import TET_loss, seed_all, get_logger
 except ImportError:
@@ -27,18 +28,18 @@ except ImportError:
     from mixup import Mixup
     from functions import TET_loss, seed_all, get_logger
 
-def build_dvs_gusture():
+def build_dvs_gusture(args):
     transform_train = transforms.Compose([
         myTransform.ToTensor(),
-        transforms.Resize(size=(64, 64)),
-        transforms.RandomCrop(64, padding=4),
+        # transforms.Resize(size=(48, 48)),
+        transforms.RandomCrop(128, padding=4),
         transforms.RandomHorizontalFlip(), ])
     # transforms.Normalize(mean=[n / 255. for n in [129.3, 124.1, 112.4]],std=[n / 255. for n in [68.2, 65.4, 70.4]]),
     # Cutout(n_holes=1, length=16)])
 
     transform_test = transforms.Compose([
         myTransform.ToTensor(),
-        transforms.Resize(size=(64, 64))
+        # transforms.Resize(size=(48, 48))
     ])
     # transforms.Normalize(mean=[n / 255. for n in [129.3, 124.1, 112.4]], std=[n / 255. for n in [68.2, 65.4, 70.4]])
     train_set = DVS128Gesture(root='/home/chrazqee/datasets/DVSGesture/', train=True, data_type='frame', frames_number=args.T,
@@ -65,7 +66,7 @@ def train(model, device, train_loader, criterion, optimizer, epoch, scaler, args
     if epoch > 140:
         mixup_fn.mixup_enabled = False
 
-    for i, (images, labels) in tqdm.tqdm(enumerate(train_loader)):
+    for i, (images, labels) in enumerate(train_loader):
         optimizer.zero_grad()
         labels = labels.to(device)
         images = images.float().to(device)
@@ -82,12 +83,11 @@ def train(model, device, train_loader, criterion, optimizer, epoch, scaler, args
                 else:
                     loss = criterion(mean_out, labels)
 
-                if args.method == "MPE_PSN" and epoch < 150:
+                if args.method == "SSN" and epoch < 75:
                     mem_loss = torch.tensor(0., device=device)
                     for m in model.modules():
                         if hasattr(m, "mem_loss"):
                             mem_loss += m.mem_loss
-                    # when using parallel, it may always zero!!!
                     assert mem_loss.item() != 0., "mem_loss should not be Zero!!!"
 
                     loss = (1 - args.lambda_mem) * loss + args.lambda_mem * mem_loss
@@ -152,7 +152,19 @@ def test(model, test_loader, criterion, device):
     correct = 0
     total = 0
     model.eval()
-    for batch_idx, (inputs, labels) in tqdm.tqdm(enumerate(test_loader)):
+    hook = MyHook(MPE_PSN)
+    hook.register(model)
+    # 存储每个 block 的 spike rate；然后统计有多少个 batch，累加后求平均，最后把结果存成一个文件
+    num_batches = 0
+    num_block = 0
+    for m in model.modules():
+        if hasattr(m, "mem_loss"):
+            num_block += 1
+
+    total_spike_rate = [0] * num_block
+
+    # todo: 写相关的处理逻辑！！！！
+    for batch_idx, (inputs, labels) in enumerate(test_loader):
         inputs = inputs.float().to(device)
         outputs = model(inputs)
         labels = labels.to(device)
@@ -160,14 +172,30 @@ def test(model, test_loader, criterion, device):
         _, predicted = mean_out.cpu().max(1)
         total += float(labels.cpu().size(0))
         correct += float(predicted.eq(labels.cpu()).sum().item())
+
+        num_batches += 1
+
+        # 计算 spike rate
+        for i, spike_feature in enumerate(hook.get_spike_buffer()):
+            # 统计 spike rate 的函数
+            total_spike_rate[i] += (spike_feature.sum() / torch.ones_like(spike_feature).sum()).item()
+
+        hook.buffer_reset()
+
         if batch_idx % 100 == 0:
             acc = 100. * float(correct) / float(total)
             print(batch_idx, len(test_loader), ' Acc: %.5f' % acc)
     final_acc = 100 * correct / total
+
+    # 查看每个 block 的 spike rate
+    # for i in range(len(total_spike_rate)):
+    #     total_spike_rate[i] /= num_batches
+    print(total_spike_rate)
+
     return final_acc
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description='PyTorch Training')
     parser.add_argument('-j',
                         '--workers',
@@ -232,12 +260,13 @@ if __name__ == "__main__":
     parser.add_argument("--channels", default=128, type=int, help="")
     parser.add_argument("--amp", action="store_true", help="")
     parser.add_argument("--use_tdbn", action="store_true", help="")
+    parser.add_argument("--test", action="store_true", help="")
 
     args = parser.parse_args()
 
     seed_all(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    train_dataset, val_dataset = build_dvs_gusture()
+    train_dataset, val_dataset = build_dvs_gusture(args)
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
                                                num_workers=args.workers, pin_memory=True, drop_last=True)
@@ -280,7 +309,7 @@ if __name__ == "__main__":
 
     log_file_name = f'T{args.T}_opt_{args.opt}_tau_{args.tau}_method_{args.method}_lr{args.lr}_b_{args.batch_size}_channels{args.channels}'
     if args.TET:
-        log_file_name += '_TET_sigmoid'
+        log_file_name += '_TET_no_memLoss'
 
     # num_gpus = torch.cuda.device_count()
     # log_file_name += f'_{num_gpus}gpu_frame'
@@ -291,7 +320,7 @@ if __name__ == "__main__":
     if args.use_tdbn:
         out_dir = './logs_frame_tdbn/'
     else:
-        out_dir = './logs_frame_sigmoid/'
+        out_dir = './logs_frame_dist_no_memloss/'
     out_dir = os.path.join(out_dir, log_file_name)
 
     if not args.resume:
@@ -308,6 +337,11 @@ if __name__ == "__main__":
         scheduler.load_state_dict(checkpoint['scheduler'])
         start_epoch = checkpoint['epoch'] + 1
         best_acc = checkpoint['best_acc']
+
+    if args.resume and args.test:
+        test_acc = test(parallel_model, test_loader, criterion, device)
+        loguru.logger.info(f"test accuracy: {test_acc}")
+        return
 
     logger = get_logger(log_file_name + '.log')
     logger.info('start training!')
@@ -350,3 +384,7 @@ if __name__ == "__main__":
         if save_max:
             torch.save(checkpoint, os.path.join(out_dir, 'checkpoint_max.pth'))
         torch.save(checkpoint, os.path.join(out_dir, 'checkpoint_latest.pth'))
+
+
+if __name__ == "__main__":
+    main()

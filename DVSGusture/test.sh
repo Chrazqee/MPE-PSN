@@ -1,0 +1,1 @@
+python test.py --lr 0.05 -TET -b 4 -T 16 --channels 256 --amp --test --resume "/home/chrazqee/Desktop/code/Parallel-Spiking-Neuron-main/DVSGusture/logs_frame_dist/T16_opt__tau_0.25_method_MPE_PSN_lr0.05_b_4_channels256_TET_2gpu_frame/286f01ac73f6481b96a88192fa301f71/checkpoint_max.pth"

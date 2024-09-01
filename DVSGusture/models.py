@@ -224,7 +224,7 @@ class MPE_PSN(nn.Module):
 
         self.coef = nn.Parameter(torch.tensor([1 / (T - 1) for _ in range(T - 1)]).view(1, T - 1, 1, 1, 1))  # N, T, C, H, W; 均匀分布
         # self.coef = nn.Parameter(torch.linspace(1., 0.01, T - 1).view(1, T - 1, 1, 1, 1), requires_grad=True)
-        self.p = nn.Parameter(torch.as_tensor(0.2), requires_grad=True)
+        # self.p = nn.Parameter(torch.as_tensor(0.2), requires_grad=True)
         # self.soft_max = nn.Softmax2d()
         self.mem_loss = 0
         self.dist = 0
@@ -235,28 +235,30 @@ class MPE_PSN(nn.Module):
         # N, T, C, H, W = x.shape
         # 对初始化的膜电位 进行一次 投影+激活
         # soft_max_x = self.soft_max(x.view(-1, C, H, W)).view(N, T, C, H, W)
-        soft_max_x = F.softmax(x, dim=1)
-        mem_hat = (1 - torch.bernoulli(soft_max_x)) * x
+        # soft_max_x = F.softmax(x, dim=1)
+        # mem_hat = (1 - torch.bernoulli(soft_max_x)) * x
+        sig_x = torch.sigmoid(x)
+        mem_hat = (1 - torch.bernoulli(sig_x)) * x
         v_0 = torch.zeros(x.shape[0], 1, *list(x.shape[2:]), device=device)
         mem_hat = torch.cat((v_0, mem_hat[:, 1:, ...]), dim=1)
         mem_memo = mem_hat * self.tau + x
         o_t = self.surrogate_function(mem_memo - self.threshold)
         mem_real = (1 - o_t) * mem_memo  # 用于计算 loss
         self.mem_loss = (torch.nn.functional.mse_loss(mem_hat[:, 1:, ...], mem_real[:, :-1, ...], reduction='none') * self.coef).mean().to(device)
-        self.calMemDist(x, mem_real)
+        # self.calMemDist(x, mem_real)
         return o_t
 
-    @torch.no_grad()
-    def calMemDist(self, x, mem_real):
-        # 计算膜电位之间的距离，体现 mem loss 的作用
-        dist = 0  # 记录膜电位与 mem_real 之间的距离变化；使用 l_2 norm 度量
-        mem = 0  # 第 0 个时间步的膜电位
-        for i in range(self.T):
-            mem = mem * self.tau + x[:, i, ...]
-            o = (mem - self.threshold > 0).float()
-            mem = (1 - o) * mem
-            dist += torch.linalg.norm(mem - mem_real[:, i, ...]).item()
-        self.dist = dist
+    # @torch.no_grad()
+    # def calMemDist(self, x, mem_real):
+    #     # 计算膜电位之间的距离，体现 mem loss 的作用
+    #     dist = 0  # 记录膜电位与 mem_real 之间的距离变化；使用 l_2 norm 度量
+    #     mem = 0  # 第 0 个时间步的膜电位
+    #     for i in range(self.T):
+    #         mem = mem * self.tau + x[:, i, ...]
+    #         o = (mem - self.threshold > 0).float()
+    #         mem = (1 - o) * mem
+    #         dist += torch.linalg.norm(mem - mem_real[:, i, ...]).item()
+    #     self.dist = dist
 
 
 class tdBatchNorm(nn.BatchNorm2d):
@@ -319,15 +321,16 @@ class DVSGestureNet(nn.Module):
             conv.append(spiking_neuron(**deepcopy(kwargs)))
             conv.append(SeqToANNContainer(nn.MaxPool2d(2, 2)))
 
-
+        w = int(64 / 2 / 2 / 2 / 2 / 2)
         self.conv_fc = nn.Sequential(
             *conv,
             SeqToANNContainer(nn.Flatten(),
                               nn.Dropout(0.5),
-                              nn.Linear(channels * 4 * 4, 1024)
+                              nn.Linear(channels * w * w, 1024)  # 256*4*4=4096
                               ),
             spiking_neuron(**deepcopy(kwargs)),
-            SeqToANNContainer(nn.Dropout(0.5),
+            SeqToANNContainer(
+                         nn.Dropout(0.5),
                               nn.Linear(1024, 110),
                               ),
             SeqToANNContainer(nn.AvgPool1d(10, 10))
