@@ -8,4 +8,4 @@
 #python train.py --lr 0.01 -TET -b 4 -T 16 --channels 256 --amp --resume "/home/chrazqee/Desktop/code/Parallel-Spiking-Neuron-main/DVSGusture/logs_frame_dist_no_memloss/T16_opt__tau_0.25_method_MPE_PSN_lr0.01_b_4_channels256_TET_no_memLoss/7f24b227d81544a88d275c84afafe8c5/checkpoint_latest.pth"
 
 #python train.py --lr 0.01 -TET -b 4 -T 16 --channels 256 --amp
-python train.py --lr 0.05 -TET -b 8 -T 16 --channels 256 --amp --resume "/home/chrazqee/Desktop/code/Parallel-Spiking-Neuron-main/DVSGusture/logs_frame_sigmoid/T16_opt__tau_0.25_method_MPE_PSN_lr0.05_b_8_channels256_TET_sigmoid/eaccd2199acd4394afae8729d5968d25/checkpoint_latest.pth"
+python train.py --lr 0.05 -TET -b 8 -T 16 --channels 256 --amp --resume "/home/chrazqee/Desktop/code/Parallel-Spiking-Neuron-main/DVSGusture/logs_frame_sigmoid/T16_opt__tau_0.25_method_MPE_PSN_lr0.05_b_8_channels256_TET_sigmoid/eaccd2199acd4394afae8729d5968d25/checkpoint_latest.pth" # 97.92
