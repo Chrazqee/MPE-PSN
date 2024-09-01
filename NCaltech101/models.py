@@ -235,8 +235,10 @@ class MPE_PSN(nn.Module):
         # N, T, C, H, W = x.shape
         # 对初始化的膜电位 进行一次 投影+激活
         # soft_max_x = self.soft_max(x.view(-1, C, H, W)).view(N, T, C, H, W)
-        soft_max_x = F.softmax(x, dim=1)
-        mem_hat = (1 - torch.bernoulli(soft_max_x)) * x
+        # soft_max_x = F.softmax(x, dim=1)
+        # mem_hat = (1 - torch.bernoulli(soft_max_x)) * x
+        sig_x = F.sigmoid(x)
+        mem_hat = (1 - torch.bernoulli(sig_x)) * x
         v_0 = torch.zeros(x.shape[0], 1, *list(x.shape[2:]), device=device)
         mem_hat = torch.cat((v_0, mem_hat[:, 1:, ...]), dim=1)
         mem_memo = mem_hat * self.tau + x
