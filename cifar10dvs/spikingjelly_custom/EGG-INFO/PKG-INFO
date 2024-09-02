@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: spikingjelly
+Version: 0.0.0.0.14
+Summary: A deep learning framework for SNNs built on PyTorch.
+Home-page: https://github.com/fangwei123456/spikingjelly
+Author: PKU MLG, PCL, and other contributors
+Author-email: fwei@pku.edu.cn, chyq@pku.edu.cn
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: License :: Other/Proprietary License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown

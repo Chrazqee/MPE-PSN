@@ -7,14 +7,16 @@ import loguru
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
+import tqdm
 # from spikingjelly.datasets.cifar10_dvs import CIFAR10DVS
-from sj.spikingjelly.datasets.cifar10_dvs import CIFAR10DVS
+from spikingjelly.datasets.cifar10_dvs import CIFAR10DVS
 from torch.utils.tensorboard import SummaryWriter
 
 import myTransform
-from functions import TET_loss, seed_all, get_logger
-from models import VGGSNN, VGGPSN, VGGSSN
 from mixup import Mixup
+# from NCaltech101.spikingjelly_custom.spikingjelly.datasets.n_caltech101 import NCaltech101
+from functions import TET_loss, seed_all, get_logger
+from models import VGGPSN, VGGMPE
 
 parser = argparse.ArgumentParser(description='PyTorch Training')
 parser.add_argument('-j',
@@ -67,17 +69,19 @@ parser.add_argument('--lamb',
                     type=float,
                     metavar='N',
                     help='adjust the norm factor to avoid outlier (default: 0.0)')
-parser.add_argument("--device", default="cuda:0", type=str, help="")
+parser.add_argument("--device", default="cuda:1", type=str, help="")
 parser.add_argument('-data_path', default='/home/chrazqee/datasets/CIFAR10-DVS/events_pt_1', type=str, help='')
-parser.add_argument('-out_dir', default='./logs_frameV6/', type=str, help='root dir for saving logs and checkpoint')
+parser.add_argument('-out_dir', default='./logs_frame_sigmoid/', type=str, help='root dir for saving logs and checkpoint')
 parser.add_argument('-resume', type=str, help='resume from the checkpoint path')
-parser.add_argument('-method', type=str, default='VGGSNN', help='use which network')
+parser.add_argument('-method', type=str, default='MPE-PSN', help='use which network')
 parser.add_argument('-opt', type=str, default='SGD0.1', help='optimizer method')
 parser.add_argument('-tau', type=float, default=0.25, help='tau of LIF')
 parser.add_argument('-TET', action='store_true', help='use the tet loss')
 parser.add_argument('-fixed', action='store_true')
 parser.add_argument("--lambda_mem", default=0.01, type=float, help="")
 parser.add_argument("--parallel", action="store_true", help="")
+parser.add_argument("--mixup", action="store_true", help="")
+
 args = parser.parse_args()
 
 device = torch.device(args.device if torch.cuda.is_available() else "cpu")
@@ -89,22 +93,24 @@ def train(model, device, train_loader, criterion, optimizer, epoch, args):
     M = len(train_loader)
     total = 0
     correct = 0
-    # mixup_args = dict(
-    #         mixup_alpha=0.5, cutmix_alpha=0., cutmix_minmax=None,
-    #         prob=0.5, switch_prob=0.5, mode="batch",
-    #         label_smoothing=0.1, num_classes=10)
-    # mixup_fn = Mixup(**mixup_args)
-    # mem_loss_fn = nn.MSELoss(reduction="None").to(device)
-    # if epoch > 75:
-    # mixup_fn.mixup_enabled = False
-        
-    for i, (images, labels) in enumerate(train_loader):
+
+    if args.mixup:
+        mixup_args = dict(
+                mixup_alpha=0.5, cutmix_alpha=0., cutmix_minmax=None,
+                prob=0.5, switch_prob=0.5, mode="batch",
+                label_smoothing=0.1, num_classes=11)
+        mixup_fn = Mixup(**mixup_args)
+        if epoch > 140:
+            mixup_fn.mixup_enabled = False
+
+    for i, (images, labels) in tqdm.tqdm(enumerate(train_loader)):
         optimizer.zero_grad()
         labels = labels.to(device)
         images = images.float().to(device)
 
-        # images, labels = mixup_fn(images, labels)
-        # labels = labels.argmax(dim=-1)
+        if args.mixup:
+            images, labels = mixup_fn(images, labels)
+            labels = labels.argmax(dim=-1)
         outputs = model(images)
         mean_out = outputs.mean(1)  # 时间步维度求均值
 
@@ -112,15 +118,6 @@ def train(model, device, train_loader, criterion, optimizer, epoch, args):
             loss = TET_loss(outputs, labels, criterion, args.means, args.lamb)
         else:
             loss = criterion(mean_out, labels)
-
-        if args.method == "SSN" and epoch < 75:
-            mem_loss = torch.tensor(0., device=device)
-            for m in model.modules():
-                if hasattr(m, "mem_loss"):
-                    mem_loss += m.mem_loss
-            assert mem_loss.item() != 0., "mem_loss should not be Zero!!!"
-
-            loss = (1-args.lambda_mem) * loss + args.lambda_mem * mem_loss
 
         # 梯度裁剪
         # 检查梯度中的 -inf
@@ -140,6 +137,18 @@ def train(model, device, train_loader, criterion, optimizer, epoch, args):
         # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         # torch.nn.utils.clip_grad_value_(model.parameters(), 1.0)
 
+        # mem loss
+        if args.method == "MPE-PSN" and epoch < 150:
+            mem_loss = torch.tensor(0., device=device)
+            for m in model.modules():
+                if hasattr(m, "mem_loss"):
+                    mem_loss += m.mem_loss
+            # when using parallel, it may always zero!!!
+            assert mem_loss.item() != 0., "mem_loss should not be Zero!!!"
+
+            loss = (1 - args.lambda_mem) * loss + args.lambda_mem * mem_loss
+
+
         running_loss += loss.item()
         if math.isnan(running_loss):
             raise ValueError('loss is Nan')
@@ -157,7 +166,7 @@ def test(model, test_loader, device):
     correct = 0
     total = 0
     model.eval()
-    for batch_idx, (inputs, targets) in enumerate(test_loader):
+    for batch_idx, (inputs, targets) in tqdm.tqdm(enumerate(test_loader)):
         inputs = inputs.float().to(device)
         outputs = model(inputs)
         mean_out = outputs.mean(1)  # 时间步维度
@@ -174,7 +183,7 @@ def test(model, test_loader, device):
 def build_dvscifar():
     transform_train = transforms.Compose([
         myTransform.ToTensor(),
-        transforms.Resize(size=(48, 48)),
+        transforms.Resize(size=(48,48)),
         transforms.RandomCrop(48, padding=4),
         transforms.RandomHorizontalFlip(), ])
     # transforms.Normalize(mean=[n / 255. for n in [129.3, 124.1, 112.4]],std=[n / 255. for n in [68.2, 65.4, 70.4]]),
@@ -182,7 +191,7 @@ def build_dvscifar():
 
     transform_test = transforms.Compose([
         myTransform.ToTensor(),
-        transforms.Resize(size=(48, 48))])
+        transforms.Resize(size=(48,48))])
     # transforms.Normalize(mean=[n / 255. for n in [129.3, 124.1, 112.4]], std=[n / 255. for n in [68.2, 65.4, 70.4]])
     train_set = CIFAR10DVS(root='/home/chrazqee/datasets/CIFAR10-DVS/', train=True, data_type='frame', frames_number=args.T,
                            split_by='number', transform=transform_train)
@@ -192,22 +201,43 @@ def build_dvscifar():
     return train_set, test_set
 
 
-def build_dvscifar_():
-    transform_train = transforms.Compose([
-        transforms.Resize(size=(48, 48)),
-        transforms.RandomCrop(48, padding=4),
-        transforms.RandomHorizontalFlip()])
+# def build_dvscifar_():
+#     transform_train = transforms.Compose([
+#         transforms.Resize(size=(48, 48)),
+#         transforms.RandomCrop(48, padding=4),
+#         transforms.RandomHorizontalFlip()])
+#
+#     transform_test = transforms.Compose([
+#         transforms.Resize(size=(48, 48))])
+#
+#     train_dataset, val_dataset = (
+#         Cifar10dvs(bins=args.T, data_path=args.data_path, data_type="training", split_ratio=[0.9, 0.1], transform=True,
+#                    transform_compose=transform_train, repre="frame"),
+#         Cifar10dvs(bins=args.T, data_path=args.data_path, data_type="validation", split_ratio=[0.9, 0.1],
+#                    transform_compose=transform_test, transform=True, repre="frame"))
+#
+#     return train_dataset, val_dataset
 
-    transform_test = transforms.Compose([
-        transforms.Resize(size=(48, 48))])
-
-    train_dataset, val_dataset = (
-        Cifar10dvs(bins=args.T, data_path=args.data_path, data_type="training", split_ratio=[0.9, 0.1], transform=True,
-                   transform_compose=transform_train, repre="frame"),
-        Cifar10dvs(bins=args.T, data_path=args.data_path, data_type="validation", split_ratio=[0.9, 0.1],
-                   transform_compose=transform_test, transform=True, repre="frame"))
-
-    return train_dataset, val_dataset
+# def build_ncaltech101():
+#     transform_train = transforms.Compose([
+#         myTransform.ToTensor(),
+#         transforms.Resize(size=(48, 48)),
+#         transforms.RandomCrop(48, padding=4),
+#         transforms.RandomHorizontalFlip(), ])
+#     # transforms.Normalize(mean=[n / 255. for n in [129.3, 124.1, 112.4]],std=[n / 255. for n in [68.2, 65.4, 70.4]]),
+#     # Cutout(n_holes=1, length=16)])
+#
+#     transform_test = transforms.Compose([
+#         myTransform.ToTensor(),
+#         transforms.Resize(size=(48, 48))
+#     ])
+#     # transforms.Normalize(mean=[n / 255. for n in [129.3, 124.1, 112.4]], std=[n / 255. for n in [68.2, 65.4, 70.4]])
+#     train_set = NCaltech101(root='/home/chrazqee/datasets/ncaltech-101/', train=True, data_type='frame', frames_number=args.T,
+#                            split_by='number', transform=transform_train)
+#     test_set = NCaltech101(root='/home/chrazqee/datasets/ncaltech-101/', train=False, data_type='frame', frames_number=args.T,
+#                           split_by='number', transform=transform_test)
+#
+#     return train_set, test_set
 
 from data.dataset import Cifar10dvs
 
@@ -224,10 +254,10 @@ if __name__ == '__main__':
 
     if args.method == 'PSN':
         model = VGGPSN()
-    elif args.method == "SSN":
-        model = VGGSSN(tau=args.tau, T=args.T)
+    elif args.method == "MPE-PSN":
+        model = VGGMPE(T=args.T)
     else:
-        model = VGGSNN(tau=args.tau)
+        raise NotImplementedError
     # print(model)
 
     loguru.logger.info("Creating model")
@@ -258,14 +288,19 @@ if __name__ == '__main__':
     log_file_name = f'T{args.T}_opt_{args.opt}_tau_{args.tau}_method_{args.method}_lr{args.lr}_b_{args.batch_size}_lambda_mem_{args.lambda_mem}'
     if args.TET:
         log_file_name += '_TET'
-
-    num_gpus = torch.cuda.device_count()
-    log_file_name += f'_{num_gpus}gpu_frameV2'
+    if args.mixup:
+        log_file_name += "_mixup"
+    # num_gpus = torch.cuda.device_count()
+    log_file_name += f'_frame_sigmoid'
 
     start_epoch = 0
     best_acc = 0
     best_epoch = 0
-    out_dir = os.path.join(args.out_dir, log_file_name)
+    if args.mixup:
+        out_dir = "./logs_frame_sigmoid_mixup/"
+    else:
+        out_dir = "./logs_frame_sigmoid/"
+    out_dir = os.path.join(out_dir, log_file_name)
 
     if args.resume:
         print('load resume')
