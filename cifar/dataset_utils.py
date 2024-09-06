@@ -1,18 +1,8 @@
-'''
-Author: ----
-Date: 2022-04-07 20:48:43
-LastEditors: GhMa
-LastEditTime: 2022-10-02 19:29:44
-'''
+import loguru
+import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
-import pandas as pd
-import os
-import random
-import numpy as np
-
-from tqdm import tqdm
 
 
 class Cutout(object):
@@ -54,54 +44,13 @@ class Cutout(object):
         mask = torch.from_numpy(mask)
         mask = mask.expand_as(img)
         img = img * mask
-
         return img
 
 
-def prepare_cifar100(args, autoaugment=True):
-    print('==> Preparing CIFAR-100 data..')
-    if autoaugment:
-        print('>>> Auto Augmentation')
-        transform_train = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.autoaugment.AutoAugment(
-                policy=transforms.autoaugment.AutoAugmentPolicy.CIFAR10
-            ),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
-    else:
-        transform_train = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
-
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ])
-
-    trainset = torchvision.datasets.CIFAR100(
-        root='/home/chrazqee/datasets/cifar-100-python',
-        train=True, download=True, transform=transform_train)
-    trainloader = torch.utils.data.DataLoader(
-        trainset, batch_size=args.minibatch, shuffle=True, num_workers=args.workers)
-
-    testset = torchvision.datasets.CIFAR100(
-        root='/home/chrazqee/datasets/cifar-100-python',
-        train=False, download=True, transform=transform_test)
-    testloader = torch.utils.data.DataLoader(
-        testset, batch_size=args.minibatch, shuffle=False, num_workers=args.workers)
-    return trainloader, testloader
-
-
 def prepare_cifar10(args, autoaugment=True):
-    print('==> Preparing CIFAR-10 data..')
+    loguru.logger.info('==> Preparing CIFAR-10 data..')
     if autoaugment:
-        print('>>> Auto Augmentation')
+        loguru.logger.info('>>> Auto Augmentation')
         transform_train = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
@@ -109,6 +58,7 @@ def prepare_cifar10(args, autoaugment=True):
                 policy=transforms.autoaugment.AutoAugmentPolicy.CIFAR10
             ),
             transforms.ToTensor(),
+            Cutout(n_holes=1, length=4),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
     else:
@@ -128,71 +78,11 @@ def prepare_cifar10(args, autoaugment=True):
         root='/home/chrazqee/datasets/cifar-10-python',
         train=True, download=True, transform=transform_train)
     trainloader = torch.utils.data.DataLoader(
-        trainset, batch_size=args.minibatch, shuffle=True, num_workers=args.workers)
+        trainset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
 
     testset = torchvision.datasets.CIFAR10(
         root='/home/chrazqee/datasets/cifar-10-python',
         train=False, download=True, transform=transform_test)
     testloader = torch.utils.data.DataLoader(
-        testset, batch_size=args.minibatch, shuffle=False, num_workers=args.workers)
-    return trainloader, testloader
-
-
-
-class DVSCIFAR10(torch.utils.data.Dataset):
-    r'''
-    Forked from https://github.com/Gus-Lab/temporal_efficient_training
-    '''
-
-    def __init__(
-            self,
-            root,
-            train=True, transform=False, target_transform=None
-    ):
-        self.root = os.path.expanduser(root)
-        self.transform = transform
-        self.target_transform = target_transform
-        self.train = train
-
-    def __getitem__(self, index):
-        r"""
-        Args:
-            index (int): Index
-        Returns:
-            tuple: (image, target) where target is index of the target class.
-        """
-        data, target = torch.load(self.root + '/{}.pt'.format(index))
-
-        if self.transform:
-            flip = random.random() > 0.5
-            if flip:
-                data = torch.flip(data, dims=(3,))
-            off1 = random.randint(-5, 5)
-            off2 = random.randint(-5, 5)
-            data = torch.roll(data, shifts=(off1, off2), dims=(2, 3))
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return data, target.long().squeeze(-1)
-
-    def __len__(self):
-        return len(os.listdir(self.root))
-
-
-def prepare_dvs_cifar10(args):
-    print('==> Preparing DVS-CIFAR-10..')
-    root = '/home/ghma/exd1/data/dvs-cifar10'
-    train_path = os.path.join(root, 'train')
-    val_path = os.path.join(root, 'test')
-    trainset = DVSCIFAR10(root=train_path, transform=True)
-    testset = DVSCIFAR10(root=val_path)
-
-    trainloader = torch.utils.data.DataLoader(
-        trainset, batch_size=args.minibatch, shuffle=True, num_workers=args.workers)
-
-    testloader = torch.utils.data.DataLoader(
-        testset, batch_size=args.minibatch, shuffle=False, num_workers=args.workers)
-
-    print('data loaded')
+        testset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
     return trainloader, testloader
