@@ -16,7 +16,7 @@ chmod +x train.sh
 ./train.sh
 ```
 
-and then, you will get the result that we support in dirs.
+and then, you will get the results that we support in related dirs.
 
 ## Some figures in the paper
 ![](figs/img_3.png)
