@@ -36,3 +36,7 @@ if you find our project useful, please cite:
       url={https://arxiv.org/abs/2409.04978}, 
 }
 ```
+## Acknowledgement
+[PSN](https://github.com/fangwei123456/Parallel-Spiking-Neuron), [Spikingjelly](https://github.com/fangwei123456/spikingjelly) and, [NSNN](https://github.com/genema/Noisy-Spiking-Neuron-Nets)
+
+For their implementations of code!
