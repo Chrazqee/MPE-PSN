@@ -10,7 +10,7 @@ step1: clone the repo
 git clone https://github.com/Chrazqee/MPE-PSN.git
 ```
 
-step2: run the *.sh scripts we support (maybe some packages need to install by yourself)
+step2: run the `*.sh` scripts we support (maybe some packages need to install by yourself)
 ```bash
 chmod +x train.sh
 ./train.sh
@@ -39,4 +39,4 @@ if you find our project useful, please cite:
 ## Acknowledgement
 [PSN](https://github.com/fangwei123456/Parallel-Spiking-Neuron), [Spikingjelly](https://github.com/fangwei123456/spikingjelly) and, [NSNN](https://github.com/genema/Noisy-Spiking-Neuron-Nets)
 
-For their implementations of code!
+For their implementations of code!!!
