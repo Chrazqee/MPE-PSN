@@ -10,7 +10,7 @@ step1: clone the repo
 git clone https://github.com/Chrazqee/MPE-PSN.git
 ```
 
-step2: run the `*.sh` scripts we support (maybe some packages need to install by yourself)
+step2: run the `*.sh` scripts we support (You may need to install certain packages on your own.)
 ```bash
 chmod +x train.sh
 ./train.sh
