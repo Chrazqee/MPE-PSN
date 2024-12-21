@@ -1,5 +1,5 @@
 # MPE-PSN spiking neuron
-![](./figs/img_4.png)
+![](./figs/img_4_new.png)
 
 This is the official Pytorch implementation of the paper [Time-independent Spiking Neuron via Membrane Potential Estimation for Efficient Spiking Neural Networks](https://arxiv.org/abs/2409.04978)
 
@@ -39,4 +39,4 @@ if you find our project useful, please cite:
 ## Acknowledgement
 [PSN](https://github.com/fangwei123456/Parallel-Spiking-Neuron), [Spikingjelly](https://github.com/fangwei123456/spikingjelly) and, [NSNN](https://github.com/genema/Noisy-Spiking-Neuron-Nets)
 
-For their implementations of code!!!
+For their implementations of codes!!!
