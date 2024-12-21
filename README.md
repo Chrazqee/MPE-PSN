@@ -1,4 +1,5 @@
 # MPE-PSN spiking neuron
+🎉 This work has been accepted by ICASSP 2025. 🎉
 ![](./figs/img_4_new.jpg)
 
 This is the official Pytorch implementation of the paper [Time-independent Spiking Neuron via Membrane Potential Estimation for Efficient Spiking Neural Networks](https://arxiv.org/abs/2409.04978)
