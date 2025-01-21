@@ -3,18 +3,18 @@ import math
 import os
 import time
 import uuid
-from signal import sigwait
+# from signal import sigwait
 
 import loguru
 import torch
 import tqdm
 from spikingjelly.datasets.dvs128_gesture import DVS128Gesture
 from torch import nn
-from torch import amp
+from torch.cuda import amp
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from torchvision.transforms import transforms
-from tqdm import tqdm_pandas
+# from tqdm import tqdm_pandas
 
 try:
     from DVSGusture import myTransform
@@ -41,9 +41,9 @@ def build_dvs_gusture():
         transforms.Resize(size=(64, 64))
     ])
     # transforms.Normalize(mean=[n / 255. for n in [129.3, 124.1, 112.4]], std=[n / 255. for n in [68.2, 65.4, 70.4]])
-    train_set = DVS128Gesture(root='/home/chrazqee/datasets/DVSGesture/', train=True, data_type='frame', frames_number=args.T,
+    train_set = DVS128Gesture(root=r'C:\dataset\DVSGesture', train=True, data_type='frame', frames_number=args.T,
                            split_by='number', transform=transform_train)
-    test_set = DVS128Gesture(root='/home/chrazqee/datasets/DVSGesture/', train=False, data_type='frame', frames_number=args.T,
+    test_set = DVS128Gesture(root=r'C:\dataset\DVSGesture', train=False, data_type='frame', frames_number=args.T,
                           split_by='number', transform=transform_test)
 
     return train_set, test_set
@@ -73,7 +73,7 @@ def train(model, device, train_loader, criterion, optimizer, epoch, scaler, args
         images, labels = mixup_fn(images, labels)
         labels = labels.argmax(dim=-1)
         if scaler is not None:
-            with amp.autocast("cuda"):
+            with amp.autocast():
                 outputs = model(images)
                 mean_out = outputs.mean(1)  # 时间步维度求均值
 
@@ -236,6 +236,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     seed_all(args.seed)
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     train_dataset, val_dataset = build_dvs_gusture()
 
